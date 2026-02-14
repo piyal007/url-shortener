@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
 
 export default function Home() {
   const [url, setUrl] = useState('');
@@ -8,6 +11,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const { user, logout } = useAuth();
+  const router = useRouter();
 
   const validateUrl = (urlString) => {
     try {
@@ -23,23 +28,38 @@ export default function Home() {
     setShortUrl('');
     setCopied(false);
 
+    // Validation
     if (!url.trim()) {
-      setError('Please enter a URL');
+      const errorMsg = 'Please enter a URL';
+      setError(errorMsg);
+      toast.error(errorMsg);
       return;
     }
 
     if (!validateUrl(url)) {
-      setError('Please enter a valid URL (must start with http:// or https://)');
+      const errorMsg = 'Please enter a valid URL (must start with http:// or https://)';
+      setError(errorMsg);
+      toast.error(errorMsg);
+      return;
+    }
+
+    if (!user) {
+      toast.error('Please login to shorten URLs');
+      router.push('/login');
       return;
     }
 
     setLoading(true);
 
-    try {
-      // Backend API endpoint
+    const shortenPromise = (async () => {
+      const token = await user.getIdToken();
+      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/shorten`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ url }),
       });
 
@@ -49,20 +69,30 @@ export default function Home() {
 
       const data = await response.json();
       setShortUrl(data.shortUrl);
-    } catch (err) {
+      setUrl('');
+      return data;
+    })();
+
+    toast.promise(shortenPromise, {
+      loading: 'Shortening URL...',
+      success: 'URL shortened successfully!',
+      error: (err) => err.message || 'Something went wrong'
+    }).catch((err) => {
       setError(err.message || 'Something went wrong. Please try again.');
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
+    });
   };
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(shortUrl);
       setCopied(true);
+      toast.success('Copied to clipboard!');
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setError('Failed to copy to clipboard');
+      toast.error('Failed to copy to clipboard');
     }
   };
 
@@ -119,7 +149,7 @@ export default function Home() {
               <button 
                 onClick={handleShorten}
                 disabled={loading}
-                className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 sm:px-8 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-base sm:text-base"
+                className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 sm:px-8 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-base sm:text-base cursor-pointer"
               >
                 {loading ? 'Shortening...' : 'Shorten'}
               </button>
@@ -145,7 +175,7 @@ export default function Home() {
                   />
                   <button 
                     onClick={handleCopy}
-                    className="w-full sm:w-auto bg-slate-700 hover:bg-slate-800 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg active:scale-95 whitespace-nowrap"
+                    className="w-full sm:w-auto bg-slate-700 hover:bg-slate-800 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg active:scale-95 whitespace-nowrap cursor-pointer"
                   >
                     {copied ? (
                       <span className="flex items-center justify-center gap-2">
